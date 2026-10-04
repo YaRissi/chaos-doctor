@@ -12,18 +12,13 @@ import (
 )
 
 const (
-	ExitHealthy      = 0
-	ExitError        = 1
-	ExitUnhealed     = 2
-	ExitHealed       = 3
-	ExitUnexaminable = 4
+	ExitHealthy  = 0
+	ExitError    = 1
+	ExitUnhealed = 2
+	ExitHealed   = 3
 
 	maxRounds = 5
 )
-
-type Stop struct{ Code int }
-
-func (e Stop) Error() string { return fmt.Sprintf("stopped with exit code %d", e.Code) }
 
 type Doctor struct {
 	Namespace, App string
@@ -50,8 +45,7 @@ func (d *Doctor) Run(ctx context.Context) (int, error) {
 		}
 		s, err := cluster.Take(ctx, d.client, d.Namespace, d.App)
 		if err != nil {
-			d.UI.Bad("I can't read '%s' any more: %v", d.App, err)
-			return 0, Stop{ExitUnexaminable}
+			return 0, fmt.Errorf("reading deployment %s: %w", d.App, err)
 		}
 		f := d.examine(s)
 		d.UI.Printf("\n")

@@ -25,19 +25,14 @@ func (d *Doctor) connect(ctx context.Context) error {
 		clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{})
 	cfg, err := loader.ClientConfig()
 	if err != nil {
-		d.UI.Bad("I can't load a kubeconfig: %v", err)
-		d.UI.Doc("Point kubectl at a cluster first (for the demo: 'just up').")
-		return Stop{ExitUnexaminable}
+		return fmt.Errorf("loading kubeconfig (for the demo: 'just up'): %w", err)
 	}
 	cfg.Timeout = requestTimeout
 	if d.client, err = kubernetes.NewForConfig(cfg); err != nil {
 		return err
 	}
 	if _, err := d.client.Discovery().RESTClient().Get().AbsPath("/readyz").DoRaw(ctx); err != nil {
-		d.UI.Bad("The cluster at %s is not answering.", cfg.Host)
-		d.UI.Evidence(err.Error())
-		d.UI.Doc("Is the cluster running? For the demo: 'just up' (or 'kind get clusters').")
-		return Stop{ExitUnexaminable}
+		return fmt.Errorf("the cluster at %s is not answering, is it running? (for the demo: 'just up'): %w", cfg.Host, err)
 	}
 	d.UI.OK("The API server at %s is ready.", cfg.Host)
 	return nil
@@ -70,11 +65,8 @@ func (d *Doctor) chooseNamespace(ctx context.Context) error {
 		}
 		d.Namespace = ns
 	}
-	if _, err := d.client.CoreV1().Namespaces().Get(ctx, d.Namespace, metav1.GetOptions{}); err != nil {
-		d.UI.Bad("I can't examine namespace '%s': %v", d.Namespace, err)
-		return Stop{ExitUnexaminable}
-	}
-	return nil
+	_, err := d.client.CoreV1().Namespaces().Get(ctx, d.Namespace, metav1.GetOptions{})
+	return err
 }
 
 func (d *Doctor) chooseApp(ctx context.Context) error {
@@ -90,8 +82,7 @@ func (d *Doctor) chooseApp(ctx context.Context) error {
 	case d.App != "" && slices.Contains(apps, d.App):
 		return nil
 	case d.App != "" || len(apps) == 0:
-		d.UI.Bad("There is no deployment '%s' in '%s'. I can see: %s", d.App, d.Namespace, strings.Join(apps, " "))
-		return Stop{ExitUnexaminable}
+		return fmt.Errorf("there is no deployment %q in %q, I can see: %s", d.App, d.Namespace, strings.Join(apps, " "))
 	case len(apps) == 1:
 		d.App = apps[0]
 		d.UI.Doc("Only one patient here: %s.", d.UI.Em(d.App))

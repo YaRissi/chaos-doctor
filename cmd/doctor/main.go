@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -30,7 +29,7 @@ func run() int {
 
 The service is expected to have the same name as the deployment.
 Without a terminal and without --auto the doctor only diagnoses, it never changes anything.
-Exit codes: 0 healthy, 2 not healed / unknown, 3 healed, 4 could not examine, 1 usage error, 130 interrupted.`,
+Exit codes: 0 healthy, 2 not healed / unknown, 3 healed, 1 error, 130 interrupted.`,
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -51,12 +50,7 @@ Exit codes: 0 healthy, 2 not healed / unknown, 3 healed, 4 could not examine, 1 
 	cmd.Flags().StringVarP(&d.App, "app", "a", "", "deployment to examine (discovered if omitted)")
 	cmd.Flags().BoolVar(&auto, "auto", false, "heal without asking; refuse whenever the correct value is unknown")
 
-	err := cmd.ExecuteContext(context.Background())
-	var stop doctor.Stop
-	switch {
-	case errors.As(err, &stop):
-		return stop.Code
-	case err != nil:
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return doctor.ExitError
 	}

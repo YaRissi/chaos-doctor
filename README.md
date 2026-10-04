@@ -37,7 +37,7 @@ Deploys deployment and service `web` (nginx, 2 replicas, mounts configmap `web-c
 
 Or install it: `go install github.com/YaRissi/chaos-doctor/cmd/doctor@latest`, or grab a binary from [Releases](https://github.com/YaRissi/chaos-doctor/releases).
 
-Without a terminal it only diagnoses. Exit codes: `0` healthy · `3` healed · `2` not healed · `4` can't examine · `1` usage · `130` interrupted.
+Without a terminal it only diagnoses. Exit codes: `0` healthy · `3` healed · `2` not healed · `1` error · `130` interrupted.
 
 ## Faults tested
 
