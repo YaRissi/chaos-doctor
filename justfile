@@ -19,7 +19,7 @@ reset:
     helm install {{app}} chart -n {{ns}} --create-namespace --wait --timeout 3m
 
 doctor *args:
-    go run ./doctor {{args}}
+    go run ./cmd/doctor {{args}}
 
 lint:
     go vet ./...

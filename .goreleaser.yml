@@ -10,7 +10,7 @@ env:
   - CGO_ENABLED=0
 
 builds:
-  - main: ./doctor
+  - main: ./cmd/doctor
     binary: doctor
     goos:
       - linux

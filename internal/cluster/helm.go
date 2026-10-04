@@ -1,4 +1,4 @@
-package main
+package cluster
 
 import (
 	"bytes"
@@ -17,31 +17,31 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-type desiredState struct {
-	release    string
-	source     string
-	deployment *appsv1.Deployment
-	configMaps map[string]*corev1.ConfigMap
+type Desired struct {
+	Release    string
+	Source     string
+	Deployment *appsv1.Deployment
+	ConfigMaps map[string]*corev1.ConfigMap
 }
 
-func loadDesired(ctx context.Context, cs kubernetes.Interface, dep *appsv1.Deployment) desiredState {
+func LoadDesired(ctx context.Context, cs kubernetes.Interface, dep *appsv1.Deployment) Desired {
 	release := dep.Annotations["meta.helm.sh/release-name"]
 	if release == "" {
-		return desiredState{}
+		return Desired{}
 	}
 	secrets, err := cs.CoreV1().Secrets(dep.Namespace).List(ctx,
 		metav1.ListOptions{LabelSelector: "owner=helm,status=deployed,name=" + release})
 	if err != nil || len(secrets.Items) == 0 {
-		return desiredState{}
+		return Desired{}
 	}
 	manifest, version, err := decodeRelease(secrets.Items[0].Data["release"])
 	if err != nil {
-		return desiredState{}
+		return Desired{}
 	}
-	ds := desiredState{
-		release:    release,
-		source:     fmt.Sprintf("Helm release '%s' (revision %d)", release, version),
-		configMaps: map[string]*corev1.ConfigMap{},
+	desired := Desired{
+		Release:    release,
+		Source:     fmt.Sprintf("Helm release '%s' (revision %d)", release, version),
+		ConfigMaps: map[string]*corev1.ConfigMap{},
 	}
 	for _, doc := range strings.Split(manifest, "\n---") {
 		var meta metav1.TypeMeta
@@ -52,16 +52,16 @@ func loadDesired(ctx context.Context, cs kubernetes.Interface, dep *appsv1.Deplo
 		case "Deployment":
 			var want appsv1.Deployment
 			if yaml.Unmarshal([]byte(doc), &want) == nil && want.Name == dep.Name {
-				ds.deployment = &want
+				desired.Deployment = &want
 			}
 		case "ConfigMap":
 			var cm corev1.ConfigMap
 			if yaml.Unmarshal([]byte(doc), &cm) == nil {
-				ds.configMaps[cm.Name] = &cm
+				desired.ConfigMaps[cm.Name] = &cm
 			}
 		}
 	}
-	return ds
+	return desired
 }
 
 // Helm stores each release as base64(gzip(json)) inside the Secret's "release" key.

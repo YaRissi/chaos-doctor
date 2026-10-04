@@ -34,4 +34,4 @@ jobs:
         run: go vet ./...
 
       - name: Build
-        run: go build -o bin/doctor ./doctor
+        run: go build -o bin/doctor ./cmd/doctor

@@ -1,4 +1,4 @@
-package main
+package diseases
 
 import (
 	"context"
@@ -6,32 +6,33 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/YaRissi/chaos-doctor/internal/cluster"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func checkMissingConfig(s *snapshot) (string, *finding) {
-	refs := configMapRefs(&s.deploy.Spec.Template.Spec)
+func checkMissingConfig(s *cluster.Snapshot) (string, *Finding) {
+	refs := configMapRefs(&s.Deployment.Spec.Template.Spec)
 	for _, name := range refs {
-		if s.configMaps[name] {
+		if s.ConfigMaps[name] {
 			continue
 		}
 		evidence := fmt.Sprintf("the pod template mounts configMap %s, and the API reports it as NotFound", name)
-		if ev := latestEvent(s.events, func(ev corev1.Event) bool {
+		if ev := cluster.LatestEvent(s.Events, func(ev corev1.Event) bool {
 			return ev.Reason == "FailedMount" && strings.Contains(ev.Message, `"`+name+`"`)
 		}); ev != nil {
 			evidence = ev.Message
 		}
 		cause := fmt.Sprintf("ConfigMap '%s' was deleted, so new pods cannot mount it and never start.", name)
-		if len(s.pods) > 0 && allRunning(s.pods) {
+		if len(s.Pods) > 0 && allRunning(s.Pods) {
 			cause = fmt.Sprintf("ConfigMap '%s' was deleted; running pods still serve their old copy, but every new or restarted pod will hang in ContainerCreating.", name)
 		}
-		return "", &finding{
-			symptom:  fmt.Sprintf("ConfigMap '%s' is referenced by the pod template but does not exist.", name),
-			disease:  "missing-config",
-			cause:    cause,
-			evidence: evidence,
-			heal:     func(d *doctor, s *snapshot) *treatment { return restoreConfigMap(d, s, name) },
+		return "", &Finding{
+			Symptom:  fmt.Sprintf("ConfigMap '%s' is referenced by the pod template but does not exist.", name),
+			Disease:  "missing-config",
+			Cause:    cause,
+			Evidence: evidence,
+			Heal:     func(env Env, s *cluster.Snapshot) *Treatment { return restoreConfigMap(env, s, name) },
 		}
 	}
 	if len(refs) == 0 {
@@ -40,22 +41,22 @@ func checkMissingConfig(s *snapshot) (string, *finding) {
 	return "All referenced ConfigMaps exist: " + strings.Join(refs, ", ") + ".", nil
 }
 
-func restoreConfigMap(d *doctor, s *snapshot, name string) *treatment {
-	original, ok := s.desired.configMaps[name]
+func restoreConfigMap(env Env, s *cluster.Snapshot, name string) *Treatment {
+	original, ok := s.Desired.ConfigMaps[name]
 	if !ok {
-		d.ui.warn("I don't know what was inside '%s' and I won't invent it. Re-deploy it from its source (e.g. 'helm upgrade').", name)
+		env.UI.Warn("I don't know what was inside '%s' and I won't invent it. Re-deploy it from its source (e.g. 'helm upgrade').", name)
 		return nil
 	}
 	cm := original.DeepCopy()
-	cm.Namespace = s.namespace
-	return &treatment{
-		source:  s.desired.source + ", which still contains ConfigMap '" + name + "'",
-		kubectl: fmt.Sprintf(`helm get manifest %s -n %s | yq 'select(.kind == "ConfigMap")' | kubectl -n %s create -f -`, s.desired.release, s.namespace, s.namespace),
-		apply: func(ctx context.Context) error {
-			_, err := d.cs.CoreV1().ConfigMaps(s.namespace).Create(ctx, cm, metav1.CreateOptions{})
+	cm.Namespace = s.Namespace
+	return &Treatment{
+		Source:  s.Desired.Source + ", which still contains ConfigMap '" + name + "'",
+		Kubectl: fmt.Sprintf(`helm get manifest %s -n %s | yq 'select(.kind == "ConfigMap")' | kubectl -n %s create -f -`, s.Desired.Release, s.Namespace, s.Namespace),
+		Apply: func(ctx context.Context) error {
+			_, err := env.Client.CoreV1().ConfigMaps(s.Namespace).Create(ctx, cm, metav1.CreateOptions{})
 			return err
 		},
-		waitRollout: true,
+		WaitRollout: true,
 	}
 }
 

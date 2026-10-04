@@ -1,4 +1,4 @@
-package main
+package diseases
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/YaRissi/chaos-doctor/internal/cluster"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,7 +14,7 @@ import (
 
 // Order is the dependency chain: a later check may rely on an earlier one having passed
 // (bad-target-port assumes bad-selector already confirmed the service exists).
-var checks = []check{
+var Checks = []Check{
 	{"Does every ConfigMap the pods need still exist?", checkMissingConfig},
 	{"Is the deployment asking for any pods?", checkScaledToZero},
 	{"How are the pods of the newest rollout doing?", checkRollout},
@@ -24,29 +25,29 @@ var checks = []check{
 }
 
 // Why a pod of the newest rollout is not Ready; asked in order for the first such pod.
-var podDiseases = []func(*snapshot, *corev1.Pod) *finding{
+var podDiseases = []func(*cluster.Snapshot, *corev1.Pod) *Finding{
 	badImage,
 	oomKilled,
 	unschedulable,
 	readinessFailing,
 }
 
-func checkRollout(s *snapshot) (string, *finding) {
-	rs := newestReplicaSet(s)
+func checkRollout(s *cluster.Snapshot) (string, *Finding) {
+	rs := s.NewestReplicaSet()
 	if rs == nil {
 		return "", unknown("I can't find the deployment's current ReplicaSet.", "no ReplicaSet matches the deployment's current revision")
 	}
 	var pods []corev1.Pod
-	for _, p := range s.pods {
+	for _, p := range s.Pods {
 		if slices.ContainsFunc(p.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == rs.UID }) {
 			pods = append(pods, p)
 		}
 	}
 	if len(pods) == 0 {
-		return "", unknown(fmt.Sprintf("ReplicaSet '%s' has no pods at all.", rs.Name), "ReplicaSet "+rs.Name+" has 0 pods"+latestWarning(s.events, rs.Name))
+		return "", unknown(fmt.Sprintf("ReplicaSet '%s' has no pods at all.", rs.Name), "ReplicaSet "+rs.Name+" has 0 pods"+cluster.LatestWarning(s.Events, rs.Name))
 	}
 	for i := range pods {
-		if podReady(&pods[i]) {
+		if cluster.PodReady(&pods[i]) {
 			continue
 		}
 		for _, disease := range podDiseases {
@@ -55,14 +56,14 @@ func checkRollout(s *snapshot) (string, *finding) {
 			}
 		}
 		return "", unknown(fmt.Sprintf("Pod '%s' is not Ready.", pods[i].Name),
-			fmt.Sprintf("pod %s is not Ready (phase %s)%s", pods[i].Name, pods[i].Status.Phase, latestWarning(s.events, pods[i].Name)))
+			fmt.Sprintf("pod %s is not Ready (phase %s)%s", pods[i].Name, pods[i].Status.Phase, cluster.LatestWarning(s.Events, pods[i].Name)))
 	}
 	return fmt.Sprintf("All %d pods of '%s' are Ready.", len(pods), rs.Name), nil
 }
 
-func checkEndpoints(s *snapshot) (string, *finding) {
+func checkEndpoints(s *cluster.Snapshot) (string, *Finding) {
 	ready := 0
-	for _, slice := range s.slices {
+	for _, slice := range s.EndpointSlices {
 		for _, ep := range slice.Endpoints {
 			if ep.Conditions.Ready != nil && *ep.Conditions.Ready {
 				ready++
@@ -70,18 +71,22 @@ func checkEndpoints(s *snapshot) (string, *finding) {
 		}
 	}
 	if ready == 0 {
-		return "", unknown("No ready endpoints.", "EndpointSlices for "+s.app+" list no ready endpoint")
+		return "", unknown("No ready endpoints.", "EndpointSlices for "+s.App+" list no ready endpoint")
 	}
 	return fmt.Sprintf("%d ready endpoint(s).", ready), nil
 }
 
-func checkRequest(s *snapshot) (string, *finding) {
-	err := s.requestErr
+func checkRequest(s *cluster.Snapshot) (string, *Finding) {
+	err := s.RequestErr
 	switch {
 	case err == nil:
-		return fmt.Sprintf("GET / through service '%s' answered successfully.", s.app), nil
-	case apierrors.IsForbidden(err) || apierrors.IsTimeout(err) || errors.Is(err, context.DeadlineExceeded):
+		return fmt.Sprintf("GET / through service '%s' answered successfully.", s.App), nil
+	case RequestUntestable(err):
 		return "I could not test it, so I'm not counting it against the patient: " + err.Error(), nil
 	}
 	return "", unknown("The request failed.", "request through the service failed: "+err.Error())
+}
+
+func RequestUntestable(err error) bool {
+	return apierrors.IsForbidden(err) || apierrors.IsTimeout(err) || errors.Is(err, context.DeadlineExceeded)
 }

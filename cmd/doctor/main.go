@@ -6,41 +6,25 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"regexp"
+	"runtime/debug"
 	"syscall"
-	"time"
 
+	"github.com/YaRissi/chaos-doctor/internal/doctor"
+	"github.com/YaRissi/chaos-doctor/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-const (
-	exitHealthy      = 0
-	exitError        = 1
-	exitUnhealed     = 2
-	exitHealed       = 3
-	exitUnexaminable = 4
-	exitInterrupted  = 130
-
-	requestTimeout = 5 * time.Second
-)
-
-var version = "dev"
-
-var nameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
-
-type stopError struct{ code int }
-
-func (e stopError) Error() string { return fmt.Sprintf("stopped with exit code %d", e.code) }
+var version = ""
 
 func main() { os.Exit(run()) }
 
 func run() int {
-	d := &doctor{}
+	d := &doctor.Doctor{}
 	auto := false
-	code := exitHealthy
+	code := doctor.ExitHealthy
 	cmd := &cobra.Command{
 		Use:     "doctor",
-		Version: version,
+		Version: buildVersion(),
 		Short:   "Examines a Deployment and its Service, explains what is wrong and offers to heal it",
 		Long: `Examines a Deployment and its Service, explains what is wrong and offers to heal it.
 
@@ -51,41 +35,52 @@ Exit codes: 0 healthy, 2 not healed / unknown, 3 healed, 4 could not examine, 1 
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			for _, name := range []string{d.namespace, d.app} {
-				if name != "" && !nameRE.MatchString(name) {
+			for _, name := range []string{d.Namespace, d.App} {
+				if name != "" && !doctor.NameRE.MatchString(name) {
 					return fmt.Errorf("%q is not a valid Kubernetes name", name)
 				}
 			}
-			d.ui = newUI(auto)
-			exitOnInterrupt(d.ui)
+			d.UI = ui.New(auto)
+			exitOnInterrupt(d.UI)
 			var err error
-			code, err = d.run(cmd.Context())
+			code, err = d.Run(cmd.Context())
 			return err
 		},
 	}
-	cmd.Flags().StringVarP(&d.namespace, "namespace", "n", "", "namespace to examine (prompted if omitted)")
-	cmd.Flags().StringVarP(&d.app, "app", "a", "", "deployment to examine (discovered if omitted)")
+	cmd.Flags().StringVarP(&d.Namespace, "namespace", "n", "", "namespace to examine (prompted if omitted)")
+	cmd.Flags().StringVarP(&d.App, "app", "a", "", "deployment to examine (discovered if omitted)")
 	cmd.Flags().BoolVar(&auto, "auto", false, "heal without asking; refuse whenever the correct value is unknown")
 
 	err := cmd.ExecuteContext(context.Background())
-	var stop stopError
+	var stop doctor.Stop
 	switch {
 	case errors.As(err, &stop):
-		return stop.code
+		return stop.Code
 	case err != nil:
 		fmt.Fprintln(os.Stderr, "error:", err)
-		return exitError
+		return doctor.ExitError
 	}
 	return code
 }
 
-func exitOnInterrupt(u *ui) {
+// Release builds set version via -ldflags; `go install …@vX` only records it in the build info.
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "dev"
+}
+
+func exitOnInterrupt(u *ui.UI) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-signals
-		u.printf("\n")
-		u.doc("Interrupted. Nothing is half-applied: every treatment is a single API call. Goodbye.")
-		os.Exit(exitInterrupted)
+		u.Printf("\n")
+		u.Doc("Interrupted. Nothing is half-applied: every treatment is a single API call. Goodbye.")
+		os.Exit(ui.ExitInterrupted)
 	}()
 }
