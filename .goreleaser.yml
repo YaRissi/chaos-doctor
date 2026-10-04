@@ -15,6 +15,7 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
@@ -22,3 +23,8 @@ builds:
       - -trimpath
     ldflags:
       - -s -w -X main.version=v{{.Version}}
+
+archives:
+  - format_overrides:
+      - goos: windows
+        formats: [zip]
