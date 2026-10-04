@@ -11,14 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-const (
-	ExitHealthy  = 0
-	ExitError    = 1
-	ExitUnhealed = 2
-	ExitHealed   = 3
-
-	maxRounds = 5
-)
+const maxRounds = 5
 
 type Doctor struct {
 	Namespace, App string
@@ -26,14 +19,14 @@ type Doctor struct {
 	client         kubernetes.Interface
 }
 
-func (d *Doctor) Run(ctx context.Context) (int, error) {
+func (d *Doctor) Run(ctx context.Context) (bool, error) {
 	d.UI.Doc("Good day. I'm the chaos doctor. Let's see what the gremlin did.")
 	if d.UI.ReadOnly() {
 		d.UI.Doc("No terminal attached, so I'll only diagnose and won't change anything.")
 	}
 	for _, step := range []func(context.Context) error{d.connect, d.chooseNamespace, d.chooseApp} {
 		if err := step(ctx); err != nil {
-			return 0, err
+			return false, err
 		}
 	}
 	d.UI.Doc("Examining deployment %s and its service in namespace %s.", d.UI.Em(d.App), d.UI.Em(d.Namespace))
@@ -45,7 +38,7 @@ func (d *Doctor) Run(ctx context.Context) (int, error) {
 		}
 		s, err := cluster.Take(ctx, d.client, d.Namespace, d.App)
 		if err != nil {
-			return 0, fmt.Errorf("reading deployment %s: %w", d.App, err)
+			return false, fmt.Errorf("reading deployment %s: %w", d.App, err)
 		}
 		f := d.examine(s)
 		d.UI.Printf("\n")
@@ -55,13 +48,13 @@ func (d *Doctor) Run(ctx context.Context) (int, error) {
 		switch {
 		case f == nil && healed:
 			d.UI.Doc("%sThe patient is healthy again.%s", d.UI.Green, d.UI.Reset)
-			return ExitHealed, nil
+			return true, nil
 		case f == nil:
 			d.UI.Doc("%sClean bill of health.%s Nothing looks wrong with '%s'.", d.UI.Green, d.UI.Reset, d.App)
-			return ExitHealthy, nil
+			return true, nil
 		case f.Disease == "":
 			d.reportUnknown(f)
-			return ExitUnhealed, nil
+			return false, nil
 		}
 		d.UI.Printf("Diagnosis [%s]: %s\n", f.Disease, f.Cause)
 		d.UI.Evidence(f.Evidence)
@@ -71,12 +64,12 @@ func (d *Doctor) Run(ctx context.Context) (int, error) {
 			} else {
 				d.UI.Doc("Leaving it untreated. Nothing was changed.")
 			}
-			return ExitUnhealed, nil
+			return false, nil
 		}
 		healed = true
 	}
 	d.UI.Doc("I gave up after %d rounds; the patient keeps changing under me.", maxRounds)
-	return ExitUnhealed, nil
+	return false, nil
 }
 
 // The first check that finds a problem names the root cause; later checks would only see its symptoms.

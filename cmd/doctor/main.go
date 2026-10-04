@@ -20,7 +20,7 @@ func main() { os.Exit(run()) }
 func run() int {
 	d := &doctor.Doctor{}
 	auto := false
-	code := doctor.ExitHealthy
+	healthy := false
 	cmd := &cobra.Command{
 		Use:     "doctor",
 		Version: buildVersion(),
@@ -29,7 +29,7 @@ func run() int {
 
 The service is expected to have the same name as the deployment.
 Without a terminal and without --auto the doctor only diagnoses, it never changes anything.
-Exit codes: 0 healthy, 2 not healed / unknown, 3 healed, 1 error, 130 interrupted.`,
+Exits 0 if the app is healthy at the end, 1 if not or on error, 130 when interrupted.`,
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -42,7 +42,7 @@ Exit codes: 0 healthy, 2 not healed / unknown, 3 healed, 1 error, 130 interrupte
 			d.UI = ui.New(auto)
 			exitOnInterrupt(d.UI)
 			var err error
-			code, err = d.Run(cmd.Context())
+			healthy, err = d.Run(cmd.Context())
 			return err
 		},
 	}
@@ -52,9 +52,12 @@ Exit codes: 0 healthy, 2 not healed / unknown, 3 healed, 1 error, 130 interrupte
 
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
-		return doctor.ExitError
+		return 1
 	}
-	return code
+	if !healthy {
+		return 1
+	}
+	return 0
 }
 
 // Release builds set version via -ldflags; `go install …@vX` only records it in the build info.
