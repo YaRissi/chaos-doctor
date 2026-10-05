@@ -33,7 +33,7 @@ func scaleUp(env Env, s *cluster.Snapshot) *Treatment {
 	}
 	replicas, ok := env.UI.Ask(fmt.Sprintf("How many replicas should '%s' run?", s.App), fallback, func(v string) bool {
 		n, err := strconv.Atoi(v)
-		return err == nil && n >= 1 && n <= maxReplicas
+		return err == nil && strconv.Itoa(n) == v && n >= 1 && n <= maxReplicas
 	})
 	if !ok {
 		env.UI.Warn("I don't know how many replicas '%s' should run, and I won't guess.", s.App)

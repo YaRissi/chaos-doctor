@@ -1,6 +1,6 @@
 # The Chaos Doctor
 
-[![Test](https://github.com/YaRissi/chaos-doctor/actions/workflows/test.yml/badge.svg)](https://github.com/YaRissi/chaos-doctor/actions/workflows/test.yml) [![Release](https://img.shields.io/github/v/release/YaRissi/chaos-doctor)](https://github.com/YaRissi/chaos-doctor/releases)
+[![Build](https://github.com/YaRissi/chaos-doctor/actions/workflows/build.yml/badge.svg)](https://github.com/YaRissi/chaos-doctor/actions/workflows/build.yml) [![Release](https://img.shields.io/github/v/release/YaRissi/chaos-doctor)](https://github.com/YaRissi/chaos-doctor/releases)
 
 Examines a Kubernetes app step by step, names the root cause in one sentence and offers to heal it. If it can't name the fault, it says so.
 
@@ -54,7 +54,7 @@ Injected by hand on a fresh install, doctor run with `--auto`.
 | Readiness probe failing | probe path patched to `/nope` | diagnosed |
 | OOMKilled | `kubectl -n clinic set resources deployment/web -c web --limits=memory=6Mi --requests=memory=6Mi` | diagnosed |
 | Unschedulable | `nodeSelector: {disk: ssd}` patched into the pod template | diagnosed |
-| Wrong targetPort | service `targetPort` patched to `8080` | diagnosed |
+| Wrong targetPort | service `targetPort` patched to `8080` | "I don't know": the request through the service fails |
 | Pods forbidden by a quota | `kubectl -n clinic create quota no-pods --hard=pods=0` + restart | "I don't know" + where to look |
 
 Also tested: cluster down, unknown namespace or app, garbage at prompts, Ctrl-C, no terminal.

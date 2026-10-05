@@ -12,14 +12,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Order is the dependency chain: a later check may rely on an earlier one having passed
-// (bad-target-port assumes bad-selector already confirmed the service exists).
+// Order is the dependency chain: a later check may rely on an earlier one having passed.
 var Checks = []Check{
 	{"Does every ConfigMap the pods need still exist?", checkMissingConfig},
 	{"Is the deployment asking for any pods?", checkScaledToZero},
 	{"How are the pods of the newest rollout doing?", checkRollout},
 	{"Does the service select the app's pods?", checkBadSelector},
-	{"Does the service send traffic to a port the container declares?", checkBadTargetPort},
 	{"Does the service have ready endpoints?", checkEndpoints},
 	{"Does a request through the service get an answer?", checkRequest},
 }
@@ -43,8 +41,13 @@ func checkRollout(s *cluster.Snapshot) (string, *Finding) {
 			pods = append(pods, p)
 		}
 	}
-	if len(pods) == 0 {
-		return "", unknown(fmt.Sprintf("ReplicaSet '%s' has no pods at all.", rs.Name), "ReplicaSet "+rs.Name+" has 0 pods"+cluster.LatestWarning(s.Events, rs.Name))
+	want := int32(1)
+	if rs.Spec.Replicas != nil {
+		want = *rs.Spec.Replicas
+	}
+	if len(pods) == 0 || int32(len(pods)) < want {
+		return "", unknown(fmt.Sprintf("ReplicaSet '%s' has %d of %d pods.", rs.Name, len(pods), want),
+			fmt.Sprintf("ReplicaSet %s has %d of %d pods%s", rs.Name, len(pods), want, cluster.LatestWarning(s.Events, rs.Name)))
 	}
 	for i := range pods {
 		if cluster.PodReady(&pods[i]) {
